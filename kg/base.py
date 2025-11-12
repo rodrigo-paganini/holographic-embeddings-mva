@@ -200,7 +200,7 @@ class FilteredRankingEval(object):
 
                 rm_idx = self.tt[p]['os'][s]
                 rm_idx = [i for i in rm_idx if i != o]
-                scores_o[rm_idx] = -np.Inf
+                scores_o[rm_idx] = -np.inf
                 sortidx_o = argsort(scores_o)[::-1]
                 pfpos['tail'].append(np.where(sortidx_o == o)[0][0] + 1)
 
@@ -210,7 +210,7 @@ class FilteredRankingEval(object):
 
                 rm_idx = self.tt[p]['ss'][o]
                 rm_idx = [i for i in rm_idx if i != s]
-                scores_s[rm_idx] = -np.Inf
+                scores_s[rm_idx] = -np.inf
                 sortidx_s = argsort(scores_s)[::-1]
                 pfpos['head'].append(np.where(sortidx_s == s)[0][0] + 1)
             pos[p] = ppos
