@@ -1,5 +1,6 @@
 import os
 import csv
+import logging
 from datetime import datetime
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
@@ -18,6 +19,17 @@ class Logger:
         # Create folder name with hyperparameters
         log_dir = Path(self.args.fout) / f"{timestamp}"
         log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Setup file logging
+        log_file = log_dir / 'train.log'
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        
+        # Add handler to the root logger and EX-KG logger
+        logging.getLogger().addHandler(file_handler)
+        logging.getLogger('EX-KG').addHandler(file_handler)
 
         # TensorBoard writer
         self.writer = SummaryWriter(log_dir)
