@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import numpy as np
-from base import Experiment, FilteredRankingEval
+from kg.base import Experiment, FilteredRankingEval
 from skge.util import ccorr
 from skge import StochasticTrainer, PairwiseStochasticTrainer, HolE
 from skge import activation_functions as afs

@@ -6,10 +6,12 @@ from collections import defaultdict as ddict
 import pickle
 import timeit
 import logging
+from pathlib import Path
 from sklearn.metrics import precision_recall_curve, auc, roc_auc_score
 
 from skge import sample
 from skge.util import to_tensor
+from kg.logging_utils import Logger
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger('EX-KG')
@@ -39,6 +41,7 @@ class Experiment(object):
     def run(self):
         # parse comandline arguments
         self.args = self.parser.parse_args()
+        self.logger = Logger(self.args)
 
         if self.args.mode == 'rank':
             self.callback = self.ranking_callback
@@ -49,6 +52,10 @@ class Experiment(object):
             raise ValueError('Unknown experiment mode (%s)' % self.args.mode)
         self.train()
 
+    def save_model(self, path, st):
+        with open(path, 'wb') as fout:
+            pickle.dump(st, fout, protocol=2)
+
     def ranking_callback(self, trn, with_eval=False):
         # print basic info
         elapsed = timeit.default_timer() - trn.epoch_start
@@ -57,29 +64,52 @@ class Experiment(object):
             log.info("[%3d] time = %ds, loss = %f" % (trn.epoch, elapsed, trn.loss))
         else:
             log.info("[%3d] time = %ds, violations = %d" % (trn.epoch, elapsed, trn.nviolations))
+        
+        # Log training metrics
+        self.logger.log_train_metrics(
+            epoch=trn.epoch,
+            time_elapsed=elapsed,
+            loss=trn.loss if self.args.no_pairwise else None,
+            violations=trn.nviolations if not self.args.no_pairwise else None
+        )
+        if self.args.fout is not None:
+            self.save_model(
+                self.args.fout / 'last.pkl', 
+                {
+                    'model': trn.model,
+                    'epoch': trn.epoch,
+                    'exectimes': self.exectimes,
+                },
+                
+            )
 
         # if we improved the validation error, store model and calc test error
         if (trn.epoch % self.args.test_all == 0) or with_eval:
             pos_v, fpos_v = self.ev_valid.positions(trn.model)
-            fmrr_valid = ranking_scores(pos_v, fpos_v, trn.epoch, 'VALID')
+            fmrr_valid, metrics_valid = ranking_scores(pos_v, fpos_v, trn.epoch, 'VALID', return_all=True)
+            
+            # Log validation metrics
+            self.logger.log_ranking_metrics('Valid', trn.epoch, metrics_valid)
+
 
             log.debug("FMRR valid = %f, best = %f" % (fmrr_valid, self.best_valid_score))
             if fmrr_valid > self.best_valid_score:
                 self.best_valid_score = fmrr_valid
                 pos_t, fpos_t = self.ev_test.positions(trn.model)
-                ranking_scores(pos_t, fpos_t, trn.epoch, 'TEST')
+                _, metrics_test = ranking_scores(pos_t, fpos_t, trn.epoch, 'TEST', return_all=True)
+                
+                # Log test metrics
+                self.logger.log_ranking_metrics('Test', trn.epoch, metrics_test)
 
                 if self.args.fout is not None:
-                    st = {
-                        'model': trn.model,
-                        'pos test': pos_t,
-                        'fpos test': fpos_t,
-                        'pos valid': pos_v,
-                        'fpos valid': fpos_v,
-                        'exectimes': self.exectimes
-                    }
-                    with open(self.args.fout, 'wb') as fout:
-                        pickle.dump(st, fout, protocol=2)
+                    self.save_model(
+                        self.args.fout / 'best_val.pkl', 
+                        {
+                            'model': trn.model,
+                            'epoch': trn.epoch,
+                            'exectimes': self.exectimes,
+                        }
+                    )
         return True
 
     def lp_callback(self, m, with_eval=False):
@@ -90,16 +120,30 @@ class Experiment(object):
             log.info("[%3d] time = %ds, loss = %d" % (m.epoch, elapsed, m.loss))
         else:
             log.info("[%3d] time = %ds, violations = %d" % (m.epoch, elapsed, m.nviolations))
+        
+        # Log training metrics
+        self.logger.log_train_metrics(
+            epoch=m.epoch,
+            time_elapsed=elapsed,
+            loss=m.loss if self.args.no_pairwise else None,
+            violations=m.nviolations if not self.args.no_pairwise else None
+        )
 
         # if we improved the validation error, store model and calc test error
         if (m.epoch % self.args.test_all == 0) or with_eval:
             auc_valid, roc_valid = self.ev_valid.scores(m)
+            
+            # Log validation metrics
+            self.logger.log_lp_metrics('Valid', m.epoch, auc_valid, roc_valid)
 
             log.debug("AUC PR valid = %f, best = %f" % (auc_valid, self.best_valid_score))
             if auc_valid > self.best_valid_score:
                 self.best_valid_score = auc_valid
                 auc_test, roc_test = self.ev_test.scores(m)
                 log.debug("AUC PR test = %f, AUC ROC test = %f" % (auc_test, roc_test))
+                
+                # Log test metrics
+                self.logger.log_lp_metrics('Test', m.epoch, auc_test, roc_test)
 
                 if self.args.fout is not None:
                     st = {
@@ -116,6 +160,9 @@ class Experiment(object):
 
     def train(self):
         # read data
+        if self.args.fout is not None:
+            self.args.fout = self.logger.setup_logging()
+
         with open(self.args.fin, 'rb') as fin:
             data = pickle.load(fin)
 
@@ -153,6 +200,9 @@ class Experiment(object):
         )
         trn.fit(xs, ys)
         self.callback(trn, with_eval=True)
+        
+        if self.args.fout is not None:
+            self.logger.close()
 
 
 class FilteredRankingEval(object):
@@ -235,15 +285,32 @@ class LinkPredictionEval(object):
         return auc(rc, pr), roc
 
 
-def ranking_scores(pos, fpos, epoch, txt):
+def ranking_scores(pos, fpos, epoch, txt, return_all=False):
     hpos = [p for k in pos.keys() for p in pos[k]['head']]
     tpos = [p for k in pos.keys() for p in pos[k]['tail']]
     fhpos = [p for k in fpos.keys() for p in fpos[k]['head']]
     ftpos = [p for k in fpos.keys() for p in fpos[k]['tail']]
-    fmrr = _print_pos(
-        np.array(hpos + tpos),
-        np.array(fhpos + ftpos),
-        epoch, txt)
+    
+    pos_array = np.array(hpos + tpos)
+    fpos_array = np.array(fhpos + ftpos)
+    
+    mrr, mean_pos, hits = compute_scores(pos_array)
+    fmrr, fmean_pos, fhits = compute_scores(fpos_array)
+    
+    log.info(
+        "[%3d] %s: MRR = %.2f/%.2f, Mean Rank = %.2f/%.2f, Hits@10 = %.2f/%.2f" %
+        (epoch, txt, mrr, fmrr, mean_pos, fmean_pos, hits, fhits)
+    )
+    
+    if return_all:
+        return fmrr, {
+            'mrr': mrr,
+            'fmrr': fmrr,
+            'mean_pos': mean_pos,
+            'fmean_pos': fmean_pos,
+            'hits': hits,
+            'fhits': fhits
+        }
     return fmrr
 
 
