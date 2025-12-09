@@ -7,6 +7,11 @@ Holographic Embeddings of Knowledge Graphs
 Maximilian Nickel, Lorenzo Rosasco, Tomaso Poggio, AAAI 2016.
 ```
 
+**plus** aditional modification by the team A. Diaz, H. Naranjo and R. Paganini for the GDA project in the MVA, at ENS Paris-Saclay. Concretely, this modifications include:
+- Automatic conversion of datasets to an accessible format for the repository.
+- Logging and graph generation for training experiments ([`research/convert_...`](research/)).
+- Experimental code for unseen embedding estimation ([`research/embedding_estimation_experiment.ipynb'`](research/embedding_estimation_experiment.ipynb))
+
 ## Install 
 
 To run the experiments, first install [scikit-kge](https://github.com/mnick/scikit-kge),
