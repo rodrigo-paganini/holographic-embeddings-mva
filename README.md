@@ -7,7 +7,8 @@ Holographic Embeddings of Knowledge Graphs
 Maximilian Nickel, Lorenzo Rosasco, Tomaso Poggio, AAAI 2016.
 ```
 
-**plus** aditional modification by the team A. Diaz, H. Naranjo and R. Paganini for the Geometric Data Analysis project in the MVA, at École Normale Supérieure Paris-Saclay. Concretely, these modifications include:
+**plus** aditional modifications by the team A. Diaz, H. Naranjo and R. Paganini for the Geometric Data Analysis project in the master's \emph{Mathématiques Vision Apprentissage}, at École Normale Supérieure Paris-Saclay.
+Concretely, these modifications include:
 - Automatic conversion of datasets to an accessible format for the repository ([`research/convert_...`](research/)).
 - Logging and tensorboard generation for training experiments.
 - Experimental code for unseen embedding estimation ([`research/embedding_estimation_experiment.ipynb'`](research/embedding_estimation_experiment.ipynb))
